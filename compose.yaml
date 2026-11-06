@@ -1,0 +1,111 @@
+services:
+  mysql:
+    image: mysql:8.4.13
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: servernet_db
+      MYSQL_USER: servernet_user
+      MYSQL_PASSWORD: ${SERVERNET_DB_PASSWORD:?Set SERVERNET_DB_PASSWORD}
+      SUPERSET_DB_PASSWORD: ${SUPERSET_DB_PASSWORD:?Set SUPERSET_DB_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init-superset-db.sh:/docker-entrypoint-initdb.d/10-superset-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysql --protocol=socket -uroot -e 'SELECT 1' >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  migrate:
+    build: ./servernet-admin
+    env_file: .env
+    environment:
+      DB_NAME: servernet_db
+      DB_USER: servernet_user
+      DB_PASSWORD: ${SERVERNET_DB_PASSWORD:?Set SERVERNET_DB_PASSWORD}
+      DB_HOST: mysql
+      DB_PORT: 3306
+    command: python manage.py migrate --noinput
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  servernet-admin:
+    build: ./servernet-admin
+    env_file: .env
+    environment:
+      DB_NAME: servernet_db
+      DB_USER: servernet_user
+      DB_PASSWORD: ${SERVERNET_DB_PASSWORD:?Set SERVERNET_DB_PASSWORD}
+      DB_HOST: mysql
+      DB_PORT: 3306
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./keys:/run/telemetry-keys:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  telemetry-api:
+    build: ./telemetry-api
+    env_file: .env
+    environment:
+      SERVICE_JWT_PUBLIC_KEY_PATH: /run/telemetry-keys/public.pem
+    volumes:
+      - ./keys/public.pem:/run/telemetry-keys/public.pem:ro
+    ports:
+      - "8001:8001"
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8.36.3
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?Set CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      TELEMETRY_READER_PASSWORD: ${TELEMETRY_READER_PASSWORD:?Set TELEMETRY_READER_PASSWORD}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  superset-init:
+    build: ./superset
+    environment:
+      SUPERSET_DB_PASSWORD: ${SUPERSET_DB_PASSWORD:?Set SUPERSET_DB_PASSWORD}
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?Set SUPERSET_SECRET_KEY}
+      SUPERSET_GUEST_TOKEN_JWT_SECRET: ${SUPERSET_GUEST_TOKEN_JWT_SECRET:?Set SUPERSET_GUEST_TOKEN_JWT_SECRET}
+      TELEMETRY_OVERVIEW_EMBEDDED_ID: ${TELEMETRY_OVERVIEW_EMBEDDED_ID:-}
+      TELEMETRY_OVERVIEW_DATASET_ID: ${TELEMETRY_OVERVIEW_DATASET_ID:-}
+    command: ["/bin/sh", "-c", "superset db upgrade && superset init"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+
+  superset:
+    build: ./superset
+    environment:
+      SUPERSET_DB_PASSWORD: ${SUPERSET_DB_PASSWORD:?Set SUPERSET_DB_PASSWORD}
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?Set SUPERSET_SECRET_KEY}
+      SUPERSET_GUEST_TOKEN_JWT_SECRET: ${SUPERSET_GUEST_TOKEN_JWT_SECRET:?Set SUPERSET_GUEST_TOKEN_JWT_SECRET}
+      TELEMETRY_OVERVIEW_EMBEDDED_ID: ${TELEMETRY_OVERVIEW_EMBEDDED_ID:-}
+      TELEMETRY_OVERVIEW_DATASET_ID: ${TELEMETRY_OVERVIEW_DATASET_ID:-}
+    ports:
+      - "127.0.0.1:8088:8088"
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+
+volumes:
+  mysql_data:
+  clickhouse_data:

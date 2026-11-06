@@ -1,0 +1,30 @@
+<!doctype html>
+{% load static %}
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Телеметрия</title>
+    <style>
+        #dashboard-container iframe {
+            width: 100%;
+            min-height: 75vh;
+            border: 0;
+        }
+    </style>
+    <script src="{% static 'vendor/superset-embedded-sdk/index.js' %}" defer></script>
+    <script src="{% static 'telemetry/embed.js' %}" defer></script>
+</head>
+<body>
+    <h1>Телеметрия</h1>
+    <div id="dashboard-picker" hidden>
+        <label for="dashboard-select">Дашборд</label>
+        <select id="dashboard-select"></select>
+    </div>
+    <p id="dashboard-status" role="status" aria-live="polite">Загрузка дашборда…</p>
+    <div id="dashboard-container" data-embed-endpoint="{% url 'telemetry_embed' %}"></div>
+    <form method="post" action="{% url 'portal_logout' %}">
+        {% csrf_token %}
+        <button type="submit">Выйти</button>
+    </form>
+</body>
+</html>

@@ -1,0 +1,5 @@
+Package: @superset-ui/embedded-sdk
+Version: 0.3.0
+Source: https://unpkg.com/@superset-ui/embedded-sdk@0.3.0/bundle/index.js
+SHA256: 04153dfc696ac9149022f6a05ef7c52c89c8c520ae602e2bccff6b04af4ccc9a
+License: Apache-2.0
